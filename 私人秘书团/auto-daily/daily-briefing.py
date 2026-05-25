@@ -180,6 +180,79 @@ def format_github_projects(projects):
     return "\n".join(lines)
 
 
+# ============ ArXiv 论文 ============
+ARXIV_NS = {"atom": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas/atom"}
+
+
+def search_arxiv(query, max_results=1):
+    """搜索 ArXiv 最新论文，返回最匹配的一篇"""
+    url = (
+        f"http://export.arxiv.org/api/query"
+        f"?search_query={urllib.parse.quote(query)}"
+        f"&start=0&max_results={max_results}"
+        f"&sortBy=submittedDate&sortOrder=descending"
+    )
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "xinyu-secretary-team"})
+        resp = urllib.request.urlopen(req, timeout=20)
+        root = ET.fromstring(resp.read().decode("utf-8"))
+        papers = []
+        for entry in root.findall("atom:entry", ARXIV_NS):
+            title = entry.find("atom:title", ARXIV_NS)
+            summary = entry.find("atom:summary", ARXIV_NS)
+            link = entry.find("atom:id", ARXIV_NS)
+            published = entry.find("atom:published", ARXIV_NS)
+            authors = entry.findall("atom:author/atom:name", ARXIV_NS)
+            papers.append({
+                "title": (title.text or "").strip().replace("\n", " "),
+                "summary": ((summary.text or "").strip())[:300].replace("\n", " "),
+                "url": (link.text or "").strip(),
+                "published": (published.text or "")[:10] if published is not None else "",
+                "authors": ", ".join(a.text for a in authors[:3]),
+            })
+        return papers
+    except Exception as e:
+        print(f"  ArXiv 搜索失败 ({query[:30]}...): {e}")
+        return []
+
+
+def get_top_papers():
+    """每个领域获取一篇权威论文"""
+    queries = {
+        "AI": "cat:cs.AI",
+        "无人机": 'all:drone OR all:UAV OR all:"unmanned aerial vehicle" OR all:"flight control"',
+        "嵌入式": 'all:"embedded system" OR all:IoT OR all:microcontroller OR all:"real-time operating system"',
+    }
+    result = {}
+    for category, query in queries.items():
+        papers = search_arxiv(query, max_results=1)
+        result[category] = papers[0] if papers else None
+    return result
+
+
+def format_papers(papers):
+    """将论文格式化为简报"""
+    lines = ["# 📄 今日学术论文推荐\n"]
+    emoji = {"AI": "🤖", "无人机": "🛸", "嵌入式": "🔧"}
+
+    for category, p in papers.items():
+        e = emoji.get(category, "📄")
+        lines.append(f"## {e} {category}")
+        if p:
+            authors_str = p["authors"] + (" ..." if p["authors"].count(",") >= 2 else "")
+            lines.append(
+                f"**[{p['title']}]({p['url']})**\n"
+                f"📅 {p['published']} | ✍ {authors_str}\n"
+                f"📝 {p['summary']}..."
+            )
+        else:
+            lines.append("> 今日暂无推荐")
+        lines.append("")
+
+    lines.append("> 新闻雨 · ArXiv 最新研究")
+    return "\n".join(lines)
+
+
 # ============ AI 生成 ============
 def call_deepseek(prompt):
     """调用 DeepSeek API"""
@@ -344,18 +417,29 @@ def main():
         print(f"  {cat}: {len(items)} 条")
 
     # 3. GitHub 项目
-    print("[3/5] 搜索 GitHub 项目...")
+    print("[3/6] 搜索 GitHub 项目...")
     github_projects = get_github_projects()
     if GITHUB_TOKEN:
         for cat, repos in github_projects.items():
             print(f"  {cat}: {len(repos)} 个项目")
 
-    # 4. AI 生成
-    print("[4/5] AI 生成中...")
+    # 4. ArXiv 论文
+    print("[4/6] 搜索 ArXiv 论文...")
+    papers = get_top_papers()
+    for cat, p in papers.items():
+        status = p["title"][:50] if p else "无"
+        print(f"  {cat}: {status}")
 
-    # 新闻简报 + GitHub 项目（合并为一条推送）
+    # 5. AI 生成
+    print("[5/6] AI 生成中...")
+
+    # 新闻简报 + ArXiv + GitHub（合并为一条推送）
     news_summary = summarize_news(news_data)
     if news_summary:
+        # 追加 ArXiv 论文
+        if papers and any(papers.values()):
+            papers_md = format_papers(papers)
+            news_summary += "\n\n---\n\n" + papers_md
         # 追加 GitHub 项目
         if github_projects and any(github_projects.values()):
             github_md = format_github_projects(github_projects)
@@ -367,10 +451,11 @@ def main():
     if outfit:
         push_wechat("出行建议", outfit)
 
-    # 5. 完成
-    print("[5/5] 完成!")
+    # 6. 完成
+    print("[6/6] 完成!")
     total_projects = sum(len(v) for v in github_projects.values())
-    print(f"晨报已推送至微信（任务{'✓' if tasks else '✗'} | 新闻✓ | GitHub {total_projects}项目 | 出行✓）")
+    total_papers = sum(1 for v in papers.values() if v)
+    print(f"晨报已推送至微信（任务{'✓' if tasks else '✗'} | 新闻✓ | 论文{total_papers}篇 | GitHub {total_projects}项目 | 出行✓）")
 
 
 if __name__ == "__main__":
