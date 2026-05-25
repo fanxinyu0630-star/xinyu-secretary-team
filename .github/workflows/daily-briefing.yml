@@ -6,6 +6,9 @@ on:
     - cron: "0 0 * * *"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   morning-briefing:
     runs-on: ubuntu-latest
@@ -18,5 +21,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: 运行晨报（任务 + 新闻 + 出行）
+      - name: 运行晨报（任务 + 新闻 + GitHub项目 + 出行）
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python 私人秘书团/auto-daily/daily-briefing.py

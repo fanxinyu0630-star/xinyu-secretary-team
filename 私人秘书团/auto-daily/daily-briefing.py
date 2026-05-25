@@ -23,6 +23,9 @@ DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
 # Server酱
 SENDKEY = "SCT354598TzTPlYbJWsLObFcj1BIrbHidS"
 
+# GitHub API (GitHub Actions 自动提供 GITHUB_TOKEN)
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
+
 # 欣雨档案
 CITY = "青岛"
 HEIGHT = 180
@@ -89,6 +92,92 @@ def get_all_news():
     for category, query in queries:
         result[category] = fetch_news_from_rss(query)
     return result
+
+
+# ============ GitHub 项目 ============
+def search_github_repos(query, count=5):
+    """搜索 GitHub 优质项目"""
+    if not GITHUB_TOKEN:
+        print("  无 GITHUB_TOKEN，跳过 GitHub 搜索")
+        return []
+
+    url = (
+        f"https://api.github.com/search/repositories"
+        f"?q={urllib.parse.quote(query)}"
+        f"&sort=stars&order=desc&per_page={count}"
+    )
+    headers = {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "xinyu-secretary-team",
+    }
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        resp = urllib.request.urlopen(req, timeout=15)
+        data = json.loads(resp.read().decode("utf-8"))
+        repos = []
+        for item in data.get("items", []):
+            repos.append({
+                "name": item["full_name"],
+                "url": item["html_url"],
+                "stars": item["stargazers_count"],
+                "description": (item.get("description") or "无描述")[:120],
+                "language": item.get("language") or "N/A",
+                "topics": item.get("topics", [])[:5],
+            })
+        return repos
+    except Exception as e:
+        print(f"  GitHub 搜索失败 ({query[:30]}...): {e}")
+        return []
+
+
+def get_github_projects():
+    """获取三个领域的 GitHub 优质项目"""
+    queries = {
+        "AI / 机器学习": (
+            "artificial-intelligence machine-learning deep-learning "
+            "language:purpose>50 stars:>100"
+        ),
+        "无人机 / 飞控": (
+            "drone uav px4 flight-controller ardupilot "
+            "stars:>10"
+        ),
+        "嵌入式 / IoT": (
+            "embedded iot stm32 microcontroller rtos "
+            "stars:>10"
+        ),
+    }
+
+    result = {}
+    for category, query in queries.items():
+        result[category] = search_github_repos(query, count=5)
+    return result
+
+
+def format_github_projects(projects):
+    """将 GitHub 项目格式化为简报"""
+    total = 0
+    lines = ["# GitHub 优质项目推荐\n"]
+    emoji = {"AI / 机器学习": "🤖", "无人机 / 飞控": "🛸", "嵌入式 / IoT": "🔧"}
+
+    for category, repos in projects.items():
+        e = emoji.get(category, "📦")
+        lines.append(f"## {e} {category}")
+        if not repos:
+            lines.append("> 今日暂无推荐\n")
+            continue
+        for r in repos:
+            total += 1
+            stars = r["stars"]
+            star_str = f"{stars/1000:.1f}k" if stars >= 1000 else str(stars)
+            lines.append(
+                f"- **[{r['name']}]({r['url']})** ⭐{star_str} | {r['language']}\n"
+                f"  {r['description']}"
+            )
+        lines.append("")
+
+    lines.append(f"> 新闻雨 · GitHub 趋势 · 共 {total} 个项目")
+    return "\n".join(lines)
 
 
 # ============ AI 生成 ============
@@ -249,17 +338,28 @@ def main():
         print("  天气获取失败")
 
     # 2. 获取新闻
-    print("[2/4] 获取新闻...")
+    print("[2/5] 获取新闻...")
     news_data = get_all_news()
     for cat, items in news_data.items():
         print(f"  {cat}: {len(items)} 条")
 
-    # 3. AI 生成
-    print("[3/4] AI 生成中...")
+    # 3. GitHub 项目
+    print("[3/5] 搜索 GitHub 项目...")
+    github_projects = get_github_projects()
+    if GITHUB_TOKEN:
+        for cat, repos in github_projects.items():
+            print(f"  {cat}: {len(repos)} 个项目")
 
-    # 新闻简报
+    # 4. AI 生成
+    print("[4/5] AI 生成中...")
+
+    # 新闻简报 + GitHub 项目（合并为一条推送）
     news_summary = summarize_news(news_data)
     if news_summary:
+        # 追加 GitHub 项目
+        if github_projects and any(github_projects.values()):
+            github_md = format_github_projects(github_projects)
+            news_summary += "\n\n---\n\n" + github_md
         push_wechat("新闻简报", news_summary)
 
     # 穿搭建议
@@ -267,9 +367,10 @@ def main():
     if outfit:
         push_wechat("出行建议", outfit)
 
-    # 4. 完成
-    print("[4/4] 完成!")
-    print(f"晨报已推送至微信（任务{'✓' if tasks else '✗'} | 新闻✓ | 出行✓）")
+    # 5. 完成
+    print("[5/5] 完成!")
+    total_projects = sum(len(v) for v in github_projects.values())
+    print(f"晨报已推送至微信（任务{'✓' if tasks else '✗'} | 新闻✓ | GitHub {total_projects}项目 | 出行✓）")
 
 
 if __name__ == "__main__":

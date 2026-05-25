@@ -1,1 +1,0 @@
-# xinyu-secretary-team
