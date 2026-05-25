@@ -1,0 +1,7 @@
+{
+  "method": "Server酱",
+  "sendkey": "SCT354598TzTPlYbJWsLObFcj1BIrbHidS",
+  "api_url": "https://sctapi.ftqq.com/",
+  "setup_guide": "1. 微信扫码关注「Server酱」公众号 → 2. 获取 SendKey → 3. 填入上方 sendkey 字段",
+  "note": "免费版每天最多 5 条推送，够秘书团使用"
+}

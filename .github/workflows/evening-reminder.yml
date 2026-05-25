@@ -1,0 +1,22 @@
+name: 欣雨晚间提醒
+
+on:
+  schedule:
+    # 每天北京时间 22:00 (UTC 14:00)
+    - cron: "0 14 * * *"
+  workflow_dispatch:
+
+jobs:
+  evening-reminder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 运行晚间提醒
+        run: python 私人秘书团/auto-daily/evening-reminder.py
